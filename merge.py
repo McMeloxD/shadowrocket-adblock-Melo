@@ -31,7 +31,7 @@ REPORT = os.path.join(ROOT, "security-report.txt")
 MARKDOWN_REPORT = os.path.join(ROOT, "security-report.md")
 
 PREFERRED_ORDER = ["Rule", "URL Rewrite", "Map Local", "Body Rewrite", "Host", "Script", "Header Rewrite"]
-HEADER_NAME = "聚合去广告"
+HEADER_NAME = "聚合去广告(McMeloxD)"
 
 # ── 安全策略 ───────────────────────────────────────────────────────────────
 
