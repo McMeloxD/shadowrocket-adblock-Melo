@@ -1,7 +1,7 @@
-#!name=聚合去广告
-#!desc=每日自动合并+安全校验 | 源 10 | MITM 28 | 脚本 7 | 2026-10-26 10:11:57 UTC
+#!name=聚合去广告(McMeloxD)
+#!desc=每日自动合并+安全校验 | 源 10 | MITM 28 | 脚本 7 | 2026-10-26 08:48:01 UTC
 #!category=广告拦截
-#!author=memoryttt (auto-merge, security-checked)
+#!author=McMeloxD (auto-merge, security-checked)
 
 [Rule]
 DOMAIN,1500020991.vodplayer.wxamedia.com,REJECT,extended-matching,pre-matching

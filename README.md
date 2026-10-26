@@ -1,7 +1,7 @@
 # shadowrocket-adblock-Melo
 
 将多个去广告模块每日自动合并为一个 Shadowrocket 模块，合并前进行安全校验。
-基于 [memoryttt/shadowrocket-adblock](https://github.com/memoryttt/shadowrocket-adblock) 维护。
+由 [McMeloxD](https://github.com/McMeloxD) 维护。
 
 ## 用法
 

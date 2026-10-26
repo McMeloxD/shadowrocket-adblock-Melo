@@ -388,7 +388,7 @@ def main():
         f"#!name={HEADER_NAME}",
         f"#!desc=每日自动合并+安全校验 | 源 {ok} | MITM {len(mitm_hosts)} | 脚本 {len(scripts)} | {ts} UTC",
         "#!category=广告拦截",
-        "#!author=memoryttt (auto-merge, security-checked)",
+        "#!author=McMeloxD (auto-merge, security-checked)",
         "",
     ]
     for name in ordered:
