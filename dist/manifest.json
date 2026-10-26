@@ -1,5 +1,5 @@
 {
-  "generated": "2026-10-26 08:48:01 UTC",
+  "generated": "2026-10-26 10:11:57 UTC",
   "sources_ok": 10,
   "sources_total": 10,
   "mitm_hosts": [
@@ -61,5 +61,14 @@
       "url": "https://raw.githubusercontent.com/ishowshu/qx/refs/heads/main/script/goofish.js",
       "host": "raw.githubusercontent.com"
     }
-  ]
+  ],
+  "section_counts": {
+    "Rule": 1086,
+    "URL Rewrite": 9,
+    "Map Local": 33,
+    "Script": 24,
+    "Header Rewrite": 1,
+    "Body Rewrite": 18
+  },
+  "script_count": 7
 }
