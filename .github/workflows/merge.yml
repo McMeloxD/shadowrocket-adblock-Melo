@@ -6,79 +6,146 @@ on:
     - cron: "17 19 * * *"
   workflow_dispatch: {}
   push:
+    branches: [main]
     paths:
       - merge.py
+      - notify.py
       - sources.txt
+      - baseline.json
+      - tests/**
+      - .github/workflows/merge.yml
+  pull_request:
+    paths:
+      - merge.py
+      - notify.py
+      - sources.txt
+      - baseline.json
+      - tests/**
       - .github/workflows/merge.yml
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: merge-adblock
+  group: merge-adblock-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  merge:
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          python-version: "3.x"
+          persist-credentials: false
 
-      - name: Build + 安全校验
-        id: build
-        run: |
-          set +e
-          python3 merge.py
-          echo "code=$?" >> "$GITHUB_OUTPUT"
-          exit 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
 
-      - name: 提交（仅安全通过 exit 0）
-        if: steps.build.outputs.code == '0'
+      - name: 安全回归测试
+        run: python -m unittest discover -s tests -v
+
+      - name: Build + 安全校验（非零退出即失败）
+        run: python merge.py
+
+      - name: 写入安全报告摘要
+        if: always()
         run: |
+          if [ -f security-report.md ]; then
+            cat security-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '构建未完成，未生成安全报告；禁止发布。' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 保存安全报告（成功和失败均保留）
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-report
+          path: security-report.*
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: 交付通过校验的产物
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verified-output
+          path: |
+            dist/merged.sgmodule
+            dist/manifest.json
+            baseline.json
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
+    # PR、非 main 的手动运行及任何失败构建都不能发布。
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: verified-output
+
+      - name: 提交到 main（远端推进则失败，禁止覆盖新代码）
+        env:
+          BUILD_SHA: ${{ github.sha }}
+        run: |
+          git fetch origin main
+          if [ "$(git rev-parse origin/main)" != "$BUILD_SHA" ]; then
+            echo 'main 已推进，本次产物过期；请在最新 main 上重新运行。'
+            exit 1
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # 产物是可复现的生成文件，不做 merge/rebase（必冲突）；
-          # 直接把本次产物盖在远端最新之上：reset 到远端 tip 后重新提交并 push，失败则重试。
-          for i in 1 2 3; do
-            git fetch -q origin main
-            git reset -q --mixed origin/main
-            git add dist/merged.sgmodule dist/manifest.json baseline.json
-            if git diff --staged --quiet; then
-              echo "无变化，跳过提交"; exit 0
-            fi
-            git commit -q -m "chore: auto-merge $(date -u +%Y-%m-%dT%H:%MZ)"
-            git push && exit 0
-            echo "push 第 $i 次失败（远端被并发推进），重试…"; sleep 3
-          done
-          echo "push 多次失败"; exit 1
+          git add dist/merged.sgmodule dist/manifest.json baseline.json
+          if git diff --staged --quiet; then
+            echo '无变化，跳过提交'
+            exit 0
+          fi
+          git commit -m "chore: auto-merge $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push origin HEAD:main
 
-      - name: 邮件告警（检测到供应链/安全风险 exit 2）
-        if: steps.build.outputs.code == '2'
-        uses: dawidd6/action-send-mail@v3
+  notify:
+    needs: [build, publish]
+    if: >-
+      always() && !cancelled() && github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request' &&
+      (needs.build.result == 'failure' || needs.publish.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          server_address: ${{ secrets.MAIL_SERVER }}
-          server_port: ${{ secrets.MAIL_PORT }}
-          secure: true
-          username: ${{ secrets.MAIL_USERNAME }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "⚠️ shadowrocket-adblock 检测到供应链风险，已停止更新"
-          to: cyg02032015@126.com
-          from: shadowrocket-adblock bot <${{ secrets.MAIL_USERNAME }}>
-          body: |
-            自动合并在安全校验阶段检测到风险，已【停止更新】并保留上一版良品（未发布被投毒内容）。
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
-            请人工核查上游模块/远程脚本是否被篡改：
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
 
-            详细风险清单见附件 security-report.txt。
-          attachments: security-report.txt
+      - name: 获取安全报告（无报告时仍发送失败通知）
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: security-report
+          path: notification-report
 
-      - name: 标红 job（任何非 0 退出）
-        if: steps.build.outputs.code != '0'
-        run: |
-          echo "merge.py 退出码=${{ steps.build.outputs.code }}（2=安全风险停更，1=运行错误）"
-          exit 1
+      - name: 发送失败邮件
+        env:
+          MAIL_SERVER: ${{ secrets.MAIL_SERVER }}
+          MAIL_PORT: ${{ secrets.MAIL_PORT }}
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+        run: python notify.py

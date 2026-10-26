@@ -50,5 +50,14 @@
     "conf.diditaxi.com.cn",
     "acs.m.goofish.com",
     "g-acs.m.goofish.com"
-  ]
+  ],
+  "section_counts": {
+    "Rule": 1086,
+    "URL Rewrite": 9,
+    "Map Local": 33,
+    "Body Rewrite": 18,
+    "Script": 24,
+    "Header Rewrite": 1
+  },
+  "script_count": 7
 }
