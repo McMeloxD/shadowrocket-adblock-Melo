@@ -331,6 +331,8 @@ def main():
                 mitm_hosts += mitm_hosts_from(lines)
                 continue
             if name.lower() == "script":
+                # B 站评论不经过 protobuf 脚本，避免请求/响应双重处理拖慢加载。
+                lines = [ln.replace(r"|main\.community\.reply\.v1\.Reply\/MainList", "") for ln in lines]
                 script_urls += extract_script_paths(lines)
             buckets.setdefault(name, [])
             seen.setdefault(name, set())

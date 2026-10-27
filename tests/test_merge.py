@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -83,6 +84,34 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(self.baseline["scripts"], baseline["scripts"])
         self.assertEqual(11, baseline["section_counts"]["Rule"])
         self.assertIn("SHA256", Path(merge.REPORT).read_text(encoding="utf-8"))
+
+    def test_bilibili_comments_bypass_scripts_while_other_endpoints_still_match(self):
+        # 来自当前上游的两类 pattern；脚本下载使用已审核的测试 URL。
+        request_pattern = (r"^https:\/\/(grpc\.biliapi\.net|app\.bilibili\.com)\/bilibili\."
+                           r"(app\.viewunite\.v1\.View\/View|main\.community\.reply\.v1\.Reply\/MainList)$")
+        response_pattern = (r"^https:\/\/(grpc\.biliapi\.net|app\.bilibili\.com)\/bilibili\."
+                            r"(app\.(show\.v1\.Popular\/Index|viewunite\.v1\.View\/View)|"
+                            r"main\.community\.reply\.v1\.Reply\/MainList|"
+                            r"community\.service\.dm\.v1\.DM\/DmView)$")
+        scripts = [f"bilibili.request = type=http-request, pattern={request_pattern}, script-path={SCRIPT}",
+                   f"bilibili.protobuf = type=http-response, pattern={response_pattern}, script-path={SCRIPT}"]
+        self.baseline["section_counts"]["Script"] = len(scripts)
+        Path(merge.BASELINE).write_text(json.dumps(self.baseline), encoding="utf-8")
+        self.responses[SOURCE] = self.responses[SECOND_SOURCE] = module_text(scripts=scripts)
+        code, _ = self.run_merge()
+        self.assertEqual(0, code)
+        lines = merge.parse_sections(Path(merge.OUTPUT).read_text(encoding="utf-8"))["Script"]
+        patterns = [re.search(r"pattern=([^,]+)", line).group(1) for line in lines]
+        for host in ("grpc.biliapi.net", "app.bilibili.com"):
+            comment = f"https://{host}/bilibili.main.community.reply.v1.Reply/MainList"
+            video = f"https://{host}/bilibili.app.viewunite.v1.View/View"
+            for pattern in patterns:
+                self.assertIsNone(re.search(pattern, comment), pattern)
+                self.assertIsNotNone(re.search(pattern, video), pattern)
+            for endpoint in ("app.show.v1.Popular/Index", "community.service.dm.v1.DM/DmView"):
+                self.assertIsNotNone(re.search(patterns[1], f"https://{host}/bilibili.{endpoint}"))
+        baseline = json.loads(Path(merge.BASELINE).read_text(encoding="utf-8"))
+        self.assertEqual(self.baseline["scripts"], baseline["scripts"])
 
     def test_changed_script_is_blocked_and_old_outputs_are_preserved(self):
         self.responses[SCRIPT] = BODY + "// benign-looking change"
